@@ -1,5 +1,6 @@
 package daycare.models;
 
+import daycare.utils.DogBreedUtility;
 import java.util.Objects;
 
 /**
@@ -10,35 +11,46 @@ import java.util.Objects;
  * the rates are public constants on this class so the menu / reports layer
  * can show them without having to instantiate a dog.
  *
+ * <p>breed validation goes through {@link DogBreedUtility} (case insensitive).
+ * if the caller passes something not on the list the ctor falls back to the
+ * default ({@link #DEFAULT_BREED}); the setter just refuses unknown values
+ * (no else, per spec).
+ *
  * <p>Returns: instance of Dog.
  *
  * <p>Example:
  * <pre>{@code
  * Owner alice = new Owner(1, "Alice", "12 Main St", "555-0100", "a@x.com");
- * Dog rex = new Dog("Rex", 3, alice, 100,
- *     'M', true, 25.5, true, "Labrador", false);
+ * Dog rex = new Dog("Rex", 3, alice, 0,
+ *     'M', true, 25.5, true, "Labrador Retriever", false);
  * rex.checkIn(0);
  * rex.checkIn(1);
  * rex.checkIn(2);
- * double fee = rex.calculateWeeklyFee(); // 15.00 * 3 = 45.00
+ * double fee = rex.calculateWeeklyFee(); // 30.00 * 3 = 90.00
  * }</pre>
  */
 public class Dog extends Mammal {
 
   /** what a normal-breed dog costs per attending day. */
-  public static final float NONDANGEROUS_DAILY_RATE = 15.00f;
+  public static final float NONDANGEROUS_DAILY_RATE = 30.00f;
 
   /** what a dangerous breed dog costs per attending day. */
-  public static final float DANGEROUS_DAILY_RATE = 25.00f;
+  public static final float DANGEROUS_DAILY_RATE = 40.00f;
 
-  protected String breed;
+  /** breed used when the ctor was handed something unrecognised. */
+  public static final String DEFAULT_BREED = "Labrador Retriever";
+
+  protected String breed = DEFAULT_BREED;
   protected boolean dangerousBreed;
 
   public Dog(String name, int age, Owner owner, int id,
-      char sex, boolean neutered, double weight, boolean vaccinated,
+      char sex, boolean vaccinated, double weight, boolean neutered,
       String breed, boolean dangerousBreed) {
-    super(name, age, owner, id, sex, neutered, weight, vaccinated);
-    this.breed = breed;
+    super(name, age, owner, id, sex, vaccinated, weight, neutered);
+    // ctor falls back to the default if the breed isnt one we know about,
+    // setter (below) just bails. canonicalise so we always store title case.
+    String canon = DogBreedUtility.canonicalBreed(breed);
+    this.breed = canon != null ? canon : DEFAULT_BREED;
     this.dangerousBreed = dangerousBreed;
   }
 
@@ -53,7 +65,10 @@ public class Dog extends Mammal {
   }
 
   public void setBreed(String breed) {
-    this.breed = breed;
+    String canon = DogBreedUtility.canonicalBreed(breed);
+    if (canon != null) {
+      this.breed = canon;
+    }
   }
 
   public boolean isDangerousBreed() {

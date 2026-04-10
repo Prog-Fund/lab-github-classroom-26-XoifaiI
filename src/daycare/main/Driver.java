@@ -220,15 +220,15 @@ public final class Driver {
     }
     String name = promptString("  name: ");
     int age = promptInt("  age: ");
-    char sex = promptChar("  sex (M/F): ");
-    boolean neutered = promptBoolean("  neutered? (y/n): ");
-    double weight = promptDouble("  weight (kg): ");
+    char sex = promptChar("  sex (M/F/U): ");
     boolean vaccinated = promptBoolean("  vaccinated? (y/n): ");
+    double weight = promptDouble("  weight (kg): ");
+    boolean neutered = promptBoolean("  neutered? (y/n): ");
     System.out.println("  known breeds: " + DogBreedUtility.getAllBreeds());
     String breed = promptString("  breed: ");
     boolean dangerous = DogBreedUtility.isDangerous(breed);
     Dog dog = new Dog(name, age, owner, 0,
-        sex, neutered, weight, vaccinated, breed, dangerous);
+        sex, vaccinated, weight, neutered, breed, dangerous);
     if (PETS.addPet(dog)) {
       status = "added dog " + dog.getName() + " (id " + dog.getId() + ")"
           + (dangerous ? " [dangerous breed flag set automatically]" : "");
@@ -244,15 +244,15 @@ public final class Driver {
     }
     String name = promptString("  name: ");
     int age = promptInt("  age: ");
-    char sex = promptChar("  sex (M/F): ");
-    boolean neutered = promptBoolean("  neutered? (y/n): ");
-    double weight = promptDouble("  weight (kg): ");
+    char sex = promptChar("  sex (M/F/U): ");
     boolean vaccinated = promptBoolean("  vaccinated? (y/n): ");
+    double weight = promptDouble("  weight (kg): ");
+    boolean neutered = promptBoolean("  neutered? (y/n): ");
     boolean indoor = promptBoolean("  indoor cat? (y/n): ");
     System.out.println("  toy suggestions: " + CatToyUtility.getAllToys());
     String toy = promptString("  favourite toy: ");
     Cat cat = new Cat(name, age, owner, 0,
-        sex, neutered, weight, vaccinated, indoor, toy);
+        sex, vaccinated, weight, neutered, indoor, toy);
     if (PETS.addPet(cat)) {
       status = "added cat " + cat.getName() + " (id " + cat.getId() + ")";
     } else {
@@ -268,13 +268,15 @@ public final class Driver {
     String name = promptString("  name: ");
     int age = promptInt("  age: ");
     System.out.println("  known species: " + BirdUtility.getAllSpecies());
-    promptString("  species (free text): "); // TODO store?
-    double wingSpan = promptDouble("  wing span (m): ");
+    // species is suggestion-only, the model doesnt store it (no field on Parrot per spec).
+    promptString("  species (free text, not stored): ");
+    double wingSpan = promptDouble("  wing span (cm): ");
     boolean canFly = promptBoolean("  can fly? (y/n): ");
     int vocab = promptInt("  vocabulary size (words): ");
     Parrot parrot = new Parrot(name, age, owner, 0, wingSpan, canFly, vocab);
     if (PETS.addPet(parrot)) {
-      status = "added parrot " + parrot.getName() + " (id " + parrot.getId() + ")";
+      status = "added parrot " + parrot.getName() + " (id " + parrot.getId()
+          + ", vocab tier " + parrot.getVocabularySize() + ")";
     } else {
       status = "couldnt add parrot (at capacity?)";
     }
@@ -287,7 +289,7 @@ public final class Driver {
     }
     show("All Pets", PETS.listAllPets());
     int idx = promptInt("  pet index to remove: ");
-    Pet removed = PETS.removePet(idx);
+    Pet removed = PETS.deletePetByIndex(idx);
     status = removed != null
         ? "removed " + removed.getName()
         : "no pet at index " + idx;
@@ -305,7 +307,11 @@ public final class Driver {
       status = "no pet at index " + idx;
       return;
     }
-    int day = promptInt("  day (0=Mon ... 6=Sun): ");
+    int day = promptInt("  day (0=Mon ... 5=Sat): ");
+    if (!Utilities.validRange(day, 0, Pet.DAYS_PER_WEEK - 1)) {
+      status = "invalid day: " + day;
+      return;
+    }
     pet.checkIn(day);
     status = pet.getName() + " checked in for " + Utilities.dayName(day);
   }
@@ -322,7 +328,11 @@ public final class Driver {
       status = "no pet at index " + idx;
       return;
     }
-    int day = promptInt("  day (0=Mon ... 6=Sun): ");
+    int day = promptInt("  day (0=Mon ... 5=Sat): ");
+    if (!Utilities.validRange(day, 0, Pet.DAYS_PER_WEEK - 1)) {
+      status = "invalid day: " + day;
+      return;
+    }
     pet.checkOut(day);
     status = pet.getName() + " checked out for " + Utilities.dayName(day);
   }

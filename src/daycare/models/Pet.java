@@ -1,5 +1,6 @@
 package daycare.models;
 
+import daycare.utils.Utilities;
 import java.util.Arrays;
 
 /**
@@ -10,10 +11,15 @@ import java.util.Arrays;
  * (Dog, Cat, Parrot via Mammal/Bird) add their own species fields and pin
  * down how the weekly fee actually gets computed.
  *
- * <p>id gets assigned by PetsDayCareAPI on add, the user never picks it.
- * daysAttending is a 7-slot Boolean array (mon = 0, sun = 6), seeded to all
- * FALSE in the constructor so {@link #numOfDaysAttending()} is always safe
- * to call.
+ * <p>id is auto assigned from a static {@link #nextId} counter that starts at
+ * {@link #FIRST_ID} (1000), so every Pet ever constructed gets a unique id
+ * the user never has to pick. callers can still pass an id explicitly, if
+ * its >= {@link #FIRST_ID} we trust it and bump the counter past it; anything
+ * smaller (incl. the usual 0 sentinel) means "give me a fresh one".
+ *
+ * <p>daysAttending is a 6 slot primitive boolean array (mon = 0, sat = 5).
+ * urban tails is closed sundays so theres no slot for it. seeded to all
+ * false in the ctor so {@link #numOfDaysAttending()} is always safe to call.
  *
  * <p>Returns: abstract class. instantiate one of the concrete subclasses
  * (Dog / Cat / Parrot) instead.
@@ -31,50 +37,62 @@ import java.util.Arrays;
  */
 public abstract class Pet {
 
-  /** how many slots daysAttending holds. spoiler: 7. */
-  public static final int DAYS_PER_WEEK = 7;
+  /** how many slots daysAttending holds. mon..sat, no sundays bc the daycare is closed. */
+  public static final int DAYS_PER_WEEK = 6;
+
+  /** first id ever handed out. spec says ids are >= 1000. */
+  public static final int FIRST_ID = 1000;
+
+  /** max length for the name field, anything longer gets truncated in the ctor/setter. */
+  public static final int MAX_NAME_LENGTH = 30;
+
+  /** rolling id counter shared across every Pet instance. */
+  private static int nextId = FIRST_ID;
 
   protected int id;
   protected String name;
   protected int age;
   protected Owner owner;
-  protected Boolean[] daysAttending;
+  protected boolean[] daysAttending;
 
   protected Pet(String name, int age, Owner owner, int id) {
     // assign fields directly instead of going through the public setters,
     // calling overridable methods from a ctor is the classic java footgun
     // (subclass override runs before its own fields are initialized)
-    this.name = name;
+    this.name = truncate(name, MAX_NAME_LENGTH);
     this.age = age;
+    // spec says owner "must be a valid owner", we treat null as invalid and
+    // leave the field null. callers can fix it later via setOwner.
     this.owner = owner;
-    this.id = id;
-    this.daysAttending = new Boolean[DAYS_PER_WEEK];
-    // seed to all FALSE so checkIn/Out and numOfDaysAttending dont have to
-    // worry about nulls in the common path. setDaysAttending could still
-    // smuggle nulls in later (eg from xstream load), numOfDaysAttending
-    // handles that defensively.
-    Arrays.fill(this.daysAttending, Boolean.FALSE);
+    this.id = assignId(id);
+    this.daysAttending = new boolean[DAYS_PER_WEEK];
+    // primitive booleans default to false, no need to fill explicitly, but
+    // doing it anyway keeps the intent obvious if anyone changes the type.
+    Arrays.fill(this.daysAttending, false);
   }
 
   /** Subclasses say how much they cost the owner per week. */
   public abstract double calculateWeeklyFee();
 
-  /** Marks this pet as attending on {@code day} (0 = mon, 6 = sun). */
+  /** Marks this pet as attending on {@code day} (0 = mon, 5 = sat). */
   public void checkIn(int day) {
-    daysAttending[day] = Boolean.TRUE;
+    if (Utilities.validRange(day, 0, DAYS_PER_WEEK - 1)) {
+      daysAttending[day] = true;
+    }
   }
 
-  /** Clears attendance for {@code day}. */
+  /** Clears attendance for {@code day} (0 = mon, 5 = sat). */
   public void checkOut(int day) {
-    daysAttending[day] = Boolean.FALSE;
+    if (Utilities.validRange(day, 0, DAYS_PER_WEEK - 1)) {
+      daysAttending[day] = false;
+    }
   }
 
   /** Counts how many days this pet is actually showing up this week. */
   public int numOfDaysAttending() {
     int total = 0;
-    for (Boolean day : daysAttending) {
-      // null safe in case xstream rehydrates a sparse array
-      if (day != null && day) {
+    for (boolean day : daysAttending) {
+      if (day) {
         total++;
       }
     }
@@ -94,7 +112,11 @@ public abstract class Pet {
   }
 
   public void setName(String name) {
-    this.name = name;
+    // setters dont apply defaults, they only update if the value passed in is
+    // valid. for name "valid" means non-null, and we still truncate.
+    if (name != null) {
+      this.name = truncate(name, MAX_NAME_LENGTH);
+    }
   }
 
   /**
@@ -104,7 +126,9 @@ public abstract class Pet {
    * setup, setName for later mutations. functionally identical right now.
    */
   public void initName(String name) {
-    this.name = name;
+    if (name != null) {
+      this.name = truncate(name, MAX_NAME_LENGTH);
+    }
   }
 
   public int getAge() {
@@ -120,21 +144,52 @@ public abstract class Pet {
   }
 
   public void setOwner(Owner owner) {
-    this.owner = owner;
+    if (owner != null) {
+      this.owner = owner;
+    }
   }
 
-  public Boolean[] getDaysAttending() {
+  public boolean[] getDaysAttending() {
     return daysAttending;
   }
 
-  public void setDaysAttending(Boolean[] daysAttending) {
-    this.daysAttending = daysAttending;
+  public void setDaysAttending(boolean[] daysAttending) {
+    if (daysAttending != null && daysAttending.length == DAYS_PER_WEEK) {
+      this.daysAttending = daysAttending;
+    }
   }
 
   @Override
   public String toString() {
     return String.format(
-        "Pet{id=%d, name=%s, age=%d, owner=%s, daysAttending=%d/7}",
-        id, name, age, owner != null ? owner.getName() : "none", numOfDaysAttending());
+        "Pet{id=%d, name=%s, age=%d, owner=%s, daysAttending=%d/%d}",
+        id, name, age, owner != null ? owner.getName() : "none",
+        numOfDaysAttending(), DAYS_PER_WEEK);
+  }
+
+  /**
+   * Picks an id for a new Pet.
+   *
+   * <p>if the caller passed an id >= {@link #FIRST_ID} we keep it and bump
+   * {@link #nextId} past it (so loaded pets dont collide with new ones). if
+   * they passed anything smaller, incl the 0 sentinel the menu uses, we hand
+   * out the next id from the counter.
+   */
+  private static int assignId(int requested) {
+    if (requested >= FIRST_ID) {
+      if (requested >= nextId) {
+        nextId = requested + 1;
+      }
+      return requested;
+    }
+    return nextId++;
+  }
+
+  /** chops {@code value} down to {@code max} chars. null in -> null out, callers handle that. */
+  private static String truncate(String value, int max) {
+    if (value == null) {
+      return null;
+    }
+    return value.length() <= max ? value : value.substring(0, max);
   }
 }

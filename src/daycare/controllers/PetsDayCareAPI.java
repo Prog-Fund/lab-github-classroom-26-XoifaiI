@@ -7,6 +7,7 @@ import daycare.models.Mammal;
 import daycare.models.Owner;
 import daycare.models.Parrot;
 import daycare.models.Pet;
+import daycare.utils.BirdUtility;
 import daycare.utils.ISerializer;
 import daycare.utils.XmlSerializer;
 import java.io.File;
@@ -18,18 +19,20 @@ import java.util.Set;
  * PetsDayCareAPI: in memory CRUD + queries + reports for the daycares pet list.
  *
  * <p>this is the workhorse controller. it owns an {@code ArrayList<Pet>},
- * assigns rolling integer ids to new pets, exposes count/list/sort/search
- * helpers used by the menu and reports screens, and persists the whole list
- * to XML via {@link XmlSerializer}.
+ * exposes count/list/sort/search helpers used by the menu and reports
+ * screens, and persists the whole list to XML via {@link XmlSerializer}.
+ *
+ * <p>id assignment lives on {@link Pet} (static counter starting at 1000), not
+ * here. callers can pass id = 0 to a Pet ctor and it will hand out a fresh
+ * one. this class never touches ids.
  *
  * <p>note: most listing methods return a single newline delimited String so
  * the Driver can pipe them straight to {@code System.out.println}. zero
  * formatting smarts in here, the menu/Tui layer is in charge of styling.
  *
- * <p>id assignment: callers pass {@code id = 0} when adding a fresh pet,
- * the API rolls a new id from {@code nextPetId}. on load, {@code nextPetId}
- * is recomputed as {@code max(existing) + 1} so restored pets dont collide
- * with new ones.
+ * <p>sorting: hand rolled bubble sort that calls {@link #swapPets(int, int)}
+ * (private). spec is explicit about not using library sort. sortPetsById is
+ * descending, sortPetsByName is ascending.
  *
  * <p>Returns: instance, construct with name + max capacity + target file.
  *
@@ -39,8 +42,8 @@ import java.util.Set;
  * api.load();
  * Owner alice = ...;
  * Dog rex = new Dog("Rex", 3, alice, 0,
- *     'M', true, 25.5, true, "Labrador", false);
- * api.addPet(rex); // rex.getId() is now set
+ *     'M', true, 25.5, true, "Labrador Retriever", false);
+ * api.addPet(rex);
  * rex.checkIn(0);
  * rex.checkIn(1);
  * double income = api.getWeeklyIncome();
@@ -49,18 +52,19 @@ import java.util.Set;
  */
 public class PetsDayCareAPI implements ISerializer {
 
+  /** name field is capped at 20 chars per spec, anything longer gets truncated. */
+  public static final int MAX_NAME_LENGTH = 20;
+
   private String name;
   private int maxNumberOfPets;
   private File file;
   private ArrayList<Pet> pets;
-  private int nextPetId;
 
   public PetsDayCareAPI(String name, int maxNumberOfPets, File file) {
-    this.name = name;
+    this.name = truncate(name, MAX_NAME_LENGTH);
     this.maxNumberOfPets = maxNumberOfPets;
     this.file = file;
     this.pets = new ArrayList<>();
-    this.nextPetId = 1;
   }
 
   public boolean addPet(Pet pet) {
@@ -70,26 +74,31 @@ public class PetsDayCareAPI implements ISerializer {
     if (pets.size() >= maxNumberOfPets) {
       return false;
     }
-    if (pet.getId() == 0) {
-      pet.setId(nextPetId++);
-    } else if (pet.getId() >= nextPetId) {
-      nextPetId = pet.getId() + 1;
-    }
     return pets.add(pet);
   }
 
-  public Pet removePet(int index) {
+  public Pet deletePetByIndex(int index) {
     if (!isValidPetIndex(index)) {
       return null;
     }
     return pets.remove(index);
   }
 
-  public void updatePet(int index, Pet pet) {
-    if (!isValidPetIndex(index)) {
-      return;
+  public Pet deletePetById(int id) {
+    for (int i = 0; i < pets.size(); i++) {
+      if (pets.get(i).getId() == id) {
+        return pets.remove(i);
+      }
+    }
+    return null;
+  }
+
+  public Pet updatePet(int index, Pet pet) {
+    if (!isValidPetIndex(index) || pet == null) {
+      return null;
     }
     pets.set(index, pet);
+    return pet;
   }
 
   public Pet getPet(int index) {
@@ -108,21 +117,13 @@ public class PetsDayCareAPI implements ISerializer {
     return null;
   }
 
-  public void swapPets(int i, int j) {
-    if (!isValidPetIndex(i) || !isValidPetIndex(j)) {
-      return;
+  public Pet getPetById(int id) {
+    for (Pet p : pets) {
+      if (p.getId() == id) {
+        return p;
+      }
     }
-    Pet tmp = pets.get(i);
-    pets.set(i, pets.get(j));
-    pets.set(j, tmp);
-  }
-
-  public void swapPets(Pet a, Pet b) {
-    int ai = pets.indexOf(a);
-    int bi = pets.indexOf(b);
-    if (ai >= 0 && bi >= 0) {
-      swapPets(ai, bi);
-    }
+    return null;
   }
 
   public boolean isValidPetIndex(int index) {
@@ -183,10 +184,18 @@ public class PetsDayCareAPI implements ISerializer {
     return count;
   }
 
-  public int numberOfParrotsByVocabularySize(int minSize) {
+  /**
+   * Counts parrots whose vocab tier matches the tier {@code wordCount} maps to.
+   *
+   * <p>per spec, vocab is stored as a category String not a raw int, so we run
+   * the input through {@link BirdUtility#vocabularyCategory(int)} first and
+   * compare against each parrots stored tier.
+   */
+  public int numberOfParrotsByVocabularySize(int wordCount) {
+    String target = BirdUtility.vocabularyCategory(wordCount);
     int count = 0;
     for (Pet p : pets) {
-      if (p instanceof Parrot par && par.getVocabularySize() >= minSize) {
+      if (p instanceof Parrot par && target.equalsIgnoreCase(par.getVocabularySize())) {
         count++;
       }
     }
@@ -195,7 +204,7 @@ public class PetsDayCareAPI implements ISerializer {
 
   public String listAllPets() {
     if (pets.isEmpty()) {
-      return "(no pets)";
+      return "No Pets";
     }
     String result = "";
     for (int i = 0; i < pets.size(); i++) {
@@ -207,17 +216,57 @@ public class PetsDayCareAPI implements ISerializer {
     return result;
   }
 
-  public String listAllDangerousDogs() {
+  public String listAllDogs() {
     String result = "";
-    for (Pet p : pets) {
-      if (p instanceof Dog dog && dog.isDangerousBreed()) {
+    for (int i = 0; i < pets.size(); i++) {
+      if (pets.get(i) instanceof Dog) {
         if (!result.isEmpty()) {
           result += "\n";
         }
-        result += dog;
+        result += i + ": " + pets.get(i);
       }
     }
-    return result.isEmpty() ? "(no dangerous dogs)" : result;
+    return result.isEmpty() ? "No Dogs" : result;
+  }
+
+  public String listAllCats() {
+    String result = "";
+    for (int i = 0; i < pets.size(); i++) {
+      if (pets.get(i) instanceof Cat) {
+        if (!result.isEmpty()) {
+          result += "\n";
+        }
+        result += i + ": " + pets.get(i);
+      }
+    }
+
+    return result.isEmpty() ? "No cats" : result;
+  }
+
+  public String listAllParrots() {
+    String result = "";
+    for (int i = 0; i < pets.size(); i++) {
+      if (pets.get(i) instanceof Parrot) {
+        if (!result.isEmpty()) {
+          result += "\n";
+        }
+        result += i + ": " + pets.get(i);
+      }
+    }
+    return result.isEmpty() ? "No Parrots" : result;
+  }
+
+  public String listAllDangerousDogs() {
+    String result = "";
+    for (int i = 0; i < pets.size(); i++) {
+      if (pets.get(i) instanceof Dog dog && dog.isDangerousBreed()) {
+        if (!result.isEmpty()) {
+          result += "\n";
+        }
+        result += i + ": " + dog;
+      }
+    }
+    return result.isEmpty() ? "No Dangerous Dogs in the Kennels" : result;
   }
 
   public String listAllPetsByOwner(String ownerName) {
@@ -231,7 +280,7 @@ public class PetsDayCareAPI implements ISerializer {
         result += i + ": " + p;
       }
     }
-    return result.isEmpty() ? "(no pets for " + ownerName + ")" : result;
+    return result.isEmpty() ? "No Pet with owner " + ownerName : result;
   }
 
   public String listAllPetsThatStayMoreThanDays(int days) {
@@ -244,7 +293,7 @@ public class PetsDayCareAPI implements ISerializer {
         result += p.getName() + " (" + p.numOfDaysAttending() + " days)";
       }
     }
-    return result.isEmpty() ? "(no pets stay more than " + days + " days)" : result;
+    return result.isEmpty() ? "No Pet stays longer than " + days : result;
   }
 
   public String listOwners() {
@@ -272,6 +321,7 @@ public class PetsDayCareAPI implements ISerializer {
       if (p instanceof Dog dog
           && dog.getOwner() != null
           && dog.getOwner().getName().equalsIgnoreCase(ownerName)
+          && breed != null
           && breed.equalsIgnoreCase(dog.getBreed())
           && dog.getAge() == age) {
         return dog;
@@ -290,15 +340,50 @@ public class PetsDayCareAPI implements ISerializer {
         result += p.getName();
       }
     }
-    return result.isEmpty() ? "(none)" : result;
+    return result.isEmpty() ? "No Pets for " + ownerName : result;
   }
 
+  /** Sorts {@code pets} by id, descending. Bubble sort, walks {@link #swapPets(int, int)}. */
   public void sortPetsById() {
-    pets.sort((a, b) -> Integer.compare(a.getId(), b.getId()));
+    for (int pass = 0; pass < pets.size() - 1; pass++) {
+      for (int j = 0; j < pets.size() - 1 - pass; j++) {
+        if (pets.get(j).getId() < pets.get(j + 1).getId()) {
+          swapPets(j, j + 1);
+        }
+      }
+    }
   }
 
+  /** Sorts {@code pets} by name (case insensitive), ascending. */
   public void sortPetsByName() {
-    pets.sort((a, b) -> a.getName().compareToIgnoreCase(b.getName()));
+    for (int pass = 0; pass < pets.size() - 1; pass++) {
+      for (int j = 0; j < pets.size() - 1 - pass; j++) {
+        String a = pets.get(j).getName();
+        String b = pets.get(j + 1).getName();
+        if (a.compareToIgnoreCase(b) > 0) {
+          swapPets(j, j + 1);
+        }
+      }
+    }
+  }
+
+  // both swap helpers are private per spec, sort routines above are the only
+  // legitimate callers.
+  private void swapPets(int i, int j) {
+    if (!isValidPetIndex(i) || !isValidPetIndex(j)) {
+      return;
+    }
+    Pet tmp = pets.get(i);
+    pets.set(i, pets.get(j));
+    pets.set(j, tmp);
+  }
+
+  private void swapPets(Pet a, Pet b) {
+    int ai = pets.indexOf(a);
+    int bi = pets.indexOf(b);
+    if (ai >= 0 && bi >= 0) {
+      swapPets(ai, bi);
+    }
   }
 
   public double getWeeklyIncome() {
@@ -325,12 +410,16 @@ public class PetsDayCareAPI implements ISerializer {
   }
 
   public void setName(String name) {
-    this.name = name;
+    if (name != null) {
+      this.name = truncate(name, MAX_NAME_LENGTH);
+    }
   }
 
   /** Same as {@link #setName(String)}, kept around for parity with the UML. */
   public void initName(String name) {
-    this.name = name;
+    if (name != null) {
+      this.name = truncate(name, MAX_NAME_LENGTH);
+    }
   }
 
   public int getMaxNumberOfPets() {
@@ -369,20 +458,16 @@ public class PetsDayCareAPI implements ISerializer {
     Object loaded = XmlSerializer.loadFromFile(file,
         Pet.class, Mammal.class, Bird.class,
         Dog.class, Cat.class, Parrot.class,
-        Owner.class, ArrayList.class, Boolean.class, Boolean[].class);
+        Owner.class, ArrayList.class, boolean[].class);
     if (loaded instanceof ArrayList<?> list) {
       this.pets = (ArrayList<Pet>) list;
     }
-    recomputeNextPetId();
   }
 
-  private void recomputeNextPetId() {
-    int max = 0;
-    for (Pet p : pets) {
-      if (p.getId() > max) {
-        max = p.getId();
-      }
+  private static String truncate(String value, int max) {
+    if (value == null) {
+      return null;
     }
-    nextPetId = max + 1;
+    return value.length() <= max ? value : value.substring(0, max);
   }
 }

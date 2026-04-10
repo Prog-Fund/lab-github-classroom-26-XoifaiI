@@ -22,8 +22,9 @@ public final class Utilities {
   /** Currency symbol prepended by {@link #formatMoney(double)}. ASCII so it works in cp437. */
   public static final String CURRENCY_SYMBOL = "$";
 
+  // mon..sat only, urban tails is closed sundays so theres no slot for it.
   private static final String[] DAY_NAMES =
-      {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
+      {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
 
   private Utilities() {}
 
@@ -32,21 +33,24 @@ public final class Utilities {
     return String.format("%s%.2f", CURRENCY_SYMBOL, amount);
   }
 
-  /** Returns the short name for {@code day} (0 = Mon, 6 = Sun). */
+  /** Returns the short name for {@code day} (0 = Mon, 5 = Sat). out-of-range -> "?". */
   public static String dayName(int day) {
+    if (day < 0 || day >= DAY_NAMES.length) {
+      return "?";
+    }
     return DAY_NAMES[day];
   }
 
   /**
-   * Formats a 7-slot daysAttending array as a comma separated list of day names.
+   * Formats a 6-slot daysAttending array as a comma separated list of day names.
    *
-   * <p>e.g. {@code [TRUE, TRUE, FALSE, TRUE, FALSE, FALSE, FALSE]} -> "Mon, Tue, Thu".
+   * <p>e.g. {@code [true, true, false, true, false, false]} -> "Mon, Tue, Thu".
    * empty schedules return "(none)" so the menu doesnt show a dangling colon.
    */
-  public static String formatDaysAttending(Boolean[] daysAttending) {
+  public static String formatDaysAttending(boolean[] daysAttending) {
     String result = "";
-    for (int i = 0; i < daysAttending.length; i++) {
-      if (daysAttending[i] != null && daysAttending[i]) {
+    for (int i = 0; i < daysAttending.length && i < DAY_NAMES.length; i++) {
+      if (daysAttending[i]) {
         if (!result.isEmpty()) {
           result += ", ";
         }

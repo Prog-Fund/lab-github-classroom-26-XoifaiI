@@ -3,45 +3,56 @@ package daycare.models;
 /**
  * Cat: a Mammal that has a favourite toy and an indoor/outdoor preference.
  *
- * <p>weekly fee depends on whether its an indoor cat (cheaper) or outdoor
- * (slightly more bc theyre messier and need more cleaning). favouriteToy is
- * a free-form String, the menu layer can suggest values from CatToyUtility
- * but theres no enforcement at the model level.
+ * <p>weekly fee starts at {@link #BASE_DAILY_RATE} per day, indoor cats add
+ * {@link #INDOOR_SURCHARGE} on top bc they need extra attention/cleaning when
+ * theyre cooped up. favouriteToy is a free-form String, the menu layer can
+ * suggest values from {@code CatToyUtility} but theres no enforcement at the
+ * model level.
  *
  * <p>Returns: instance of Cat.
  *
  * <p>Example:
  * <pre>{@code
  * Owner alice = new Owner(1, "Alice", "12 Main St", "555-0100", "a@x.com");
- * Cat whiskers = new Cat("Whiskers", 5, alice, 200,
+ * Cat whiskers = new Cat("Whiskers", 5, alice, 0,
  *     'F', true, 4.2, true, true, "Feather Wand");
  * whiskers.checkIn(0);
  * whiskers.checkIn(2);
- * double fee = whiskers.calculateWeeklyFee(); // 10.00 * 2 = 20.00
+ * double fee = whiskers.calculateWeeklyFee(); // (20 + 5) * 2 = 50.00
  * }</pre>
  */
 public class Cat extends Mammal {
 
-  /** what an indoor cat costs per attending day. */
-  public static final float INDOOR_DAILY_RATE = 10.00f;
+  /** base daily rate per attending day, every cat pays this. */
+  public static final float BASE_DAILY_RATE = 20.00f;
 
-  /** what an outdoor cat costs per attending day. they need more cleaning, hence pricier. */
-  public static final float OUTDOOR_DAILY_RATE = 12.50f;
+  /** extra per attending day if the cat is an indoor only cat. */
+  public static final float INDOOR_SURCHARGE = 5.00f;
 
-  protected boolean indoorCat;
-  protected String favouriteToy;
+  /** indoorCat default per spec, urban tails assumes indoor unless told otherwise. */
+  public static final boolean DEFAULT_INDOOR = true;
+
+  /** favouriteToy default per spec, used when nothing was passed in. */
+  public static final String DEFAULT_TOY = "not known";
+
+  protected boolean indoorCat = DEFAULT_INDOOR;
+  protected String favouriteToy = DEFAULT_TOY;
 
   public Cat(String name, int age, Owner owner, int id,
-      char sex, boolean neutered, double weight, boolean vaccinated,
+      char sex, boolean vaccinated, double weight, boolean neutered,
       boolean indoorCat, String favouriteToy) {
-    super(name, age, owner, id, sex, neutered, weight, vaccinated);
+    super(name, age, owner, id, sex, vaccinated, weight, neutered);
     this.indoorCat = indoorCat;
-    this.favouriteToy = favouriteToy;
+    // string "validation" here is just null/blank -> default. anything else
+    // goes through. CatToyUtility could be used for stricter checks but spec
+    // doesnt require it.
+    this.favouriteToy =
+        (favouriteToy != null && !favouriteToy.isBlank()) ? favouriteToy : DEFAULT_TOY;
   }
 
   @Override
   public double calculateWeeklyFee() {
-    float rate = indoorCat ? INDOOR_DAILY_RATE : OUTDOOR_DAILY_RATE;
+    float rate = indoorCat ? BASE_DAILY_RATE + INDOOR_SURCHARGE : BASE_DAILY_RATE;
     return rate * numOfDaysAttending();
   }
 
@@ -58,7 +69,9 @@ public class Cat extends Mammal {
   }
 
   public void setFavouriteToy(String favouriteToy) {
-    this.favouriteToy = favouriteToy;
+    if (favouriteToy != null && !favouriteToy.isBlank()) {
+      this.favouriteToy = favouriteToy;
+    }
   }
 
   @Override
