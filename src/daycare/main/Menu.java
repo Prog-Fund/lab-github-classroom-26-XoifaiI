@@ -72,7 +72,11 @@ public final class Menu {
   }
 
   public Menu status(String status) {
-    this.status = status;
+    // scrub control chars: status usually includes user-typed names from the
+    // last action ("added owner Alice (id 3)"), and we render it through
+    // Tui.dim straight to stdout. sanitising here keeps the escape injection
+    // hole closed without having to trust every caller.
+    this.status = Tui.sanitize(status);
     return this;
   }
 

@@ -59,7 +59,7 @@ public abstract class Pet {
     // assign fields directly instead of going through the public setters,
     // calling overridable methods from a ctor is the classic java footgun
     // (subclass override runs before its own fields are initialized)
-    this.name = truncate(name, MAX_NAME_LENGTH);
+    this.name = Utilities.truncate(name, MAX_NAME_LENGTH);
     this.age = age;
     // spec says owner "must be a valid owner", we treat null as invalid and
     // leave the field null. callers can fix it later via setOwner.
@@ -115,7 +115,7 @@ public abstract class Pet {
     // setters dont apply defaults, they only update if the value passed in is
     // valid. for name "valid" means non-null, and we still truncate.
     if (name != null) {
-      this.name = truncate(name, MAX_NAME_LENGTH);
+      this.name = Utilities.truncate(name, MAX_NAME_LENGTH);
     }
   }
 
@@ -127,7 +127,7 @@ public abstract class Pet {
    */
   public void initName(String name) {
     if (name != null) {
-      this.name = truncate(name, MAX_NAME_LENGTH);
+      this.name = Utilities.truncate(name, MAX_NAME_LENGTH);
     }
   }
 
@@ -150,12 +150,16 @@ public abstract class Pet {
   }
 
   public boolean[] getDaysAttending() {
-    return daysAttending;
+    // defensive copy on the way out: otherwise a caller could flip days past
+    // our checkIn/checkOut guard and skip the validRange check entirely.
+    return Arrays.copyOf(daysAttending, daysAttending.length);
   }
 
   public void setDaysAttending(boolean[] daysAttending) {
     if (daysAttending != null && daysAttending.length == DAYS_PER_WEEK) {
-      this.daysAttending = daysAttending;
+      // defensive copy on the way in, same reasoning: stop the caller from
+      // keeping a live handle to our internal array after the set.
+      this.daysAttending = Arrays.copyOf(daysAttending, DAYS_PER_WEEK);
     }
   }
 
@@ -185,11 +189,27 @@ public abstract class Pet {
     return nextId++;
   }
 
-  /** chops {@code value} down to {@code max} chars. null in -> null out, callers handle that. */
-  private static String truncate(String value, int max) {
-    if (value == null) {
-      return null;
+  /**
+   * Advances {@link #nextId} past every id in {@code loaded}.
+   *
+   * <p>xstream builds pets via reflection, bypassing the ctor, so {@link #assignId}
+   * never runs for loaded pets and the static counter would otherwise stay at
+   * whatever it was before the load. call this after deserialising a list of
+   * pets to keep ids monotonic across a save/load cycle. mirrors what
+   * {@code OwnerAPI.recomputeNextOwnerId()} already does for owners.
+   *
+   * <p>only moves the counter forward, never backward, so its safe to call
+   * repeatedly and safe when {@code loaded} is empty.
+   */
+  public static void recomputeNextId(Iterable<? extends Pet> loaded) {
+    if (loaded == null) {
+      return;
     }
-    return value.length() <= max ? value : value.substring(0, max);
+    for (Pet p : loaded) {
+      if (p != null && p.id >= nextId) {
+        nextId = p.id + 1;
+      }
+    }
   }
+
 }

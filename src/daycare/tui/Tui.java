@@ -108,6 +108,45 @@ public final class Tui {
     return ANSI.matcher(s).replaceAll("").length();
   }
 
+  /**
+   * Strips control characters that would mess with terminal rendering.
+   *
+   * <p>the app echoes user data straight to stdout (list screens, status line,
+   * panel rows). if a user types {@code ESC[2J} as an owner name, listing
+   * owners clears the screen, and pasting weirder escapes can redefine
+   * keybinds, write to the clipboard on iterm2, or forge a fake prompt. same
+   * threat model applies to strings loaded out of a hand-crafted pets.xml.
+   *
+   * <p>strips C0 (0x00-0x1F) and C1 (0x80-0x9F) control chars plus DEL (0x7F).
+   * tab (0x09) and newline (0x0A) are preserved because the list builders use
+   * them as structural separators, everything else goes. null in, null out.
+   *
+   * <p>idempotent, so its safe to call at both the input boundary (read from
+   * stdin) and the output boundary (render to stdout). we do both for defence
+   * in depth, loaded xml would otherwise sneak past an input only filter.
+   */
+  public static String sanitize(String s) {
+    if (s == null) {
+      return null;
+    }
+    StringBuilder out = null;
+    for (int i = 0; i < s.length(); i++) {
+      char c = s.charAt(i);
+      boolean strip = c == '\u007F'
+          || (c < '\u0020' && c != '\t' && c != '\n')
+          || (c >= '\u0080' && c <= '\u009F');
+      if (strip) {
+        if (out == null) {
+          out = new StringBuilder(s.length());
+          out.append(s, 0, i);
+        }
+      } else if (out != null) {
+        out.append(c);
+      }
+    }
+    return out == null ? s : out.toString();
+  }
+
   public static String bold(String s) {
     return colorEnabled ? "\u001B[1m" + s + "\u001B[0m" : s;
   }

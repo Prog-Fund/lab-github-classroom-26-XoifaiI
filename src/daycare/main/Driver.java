@@ -378,7 +378,12 @@ public final class Driver {
     System.out.println();
     System.out.println("  " + Tui.bold(title));
     System.out.println();
-    System.out.println(body);
+    // sanitise the body before printing: the list builders concat Pet/Owner
+    // toString which includes user-controlled names, addresses, breeds, etc.
+    // any of them could carry a terminal escape if they came from a hand-
+    // edited xml file. newlines in sanitize are preserved so list separators
+    // still work.
+    System.out.println(Tui.sanitize(body));
     System.out.println();
     Tui.pause(SCANNER);
   }
@@ -411,7 +416,10 @@ public final class Driver {
 
   private static String promptString(String label) {
     System.out.print(label);
-    return INPUT.readLine().orElse("");
+    // scrub control chars at the input boundary so a pasted ESC[2J never
+    // reaches the data model. output side scrub in show() still catches the
+    // loaded-xml case. see Tui.sanitize for the full story.
+    return Tui.sanitize(INPUT.readLine().orElse(""));
   }
 
   private static int promptInt(String label) {

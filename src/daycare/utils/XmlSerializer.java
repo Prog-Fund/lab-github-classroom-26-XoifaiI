@@ -1,12 +1,15 @@
 package daycare.utils;
 
 import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
 import java.io.Reader;
 import java.io.Writer;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 
 /**
  * XmlSerializer: reflection based wrapper around XStream for save/load.
@@ -45,12 +48,43 @@ public final class XmlSerializer {
 
   private XmlSerializer() {}
 
-  /** Writes {@code obj} to {@code file} as XML. */
+  /**
+   * Writes {@code obj} to {@code file} as UTF-8 XML, atomically.
+   *
+   * <p>writes to a sibling {@code .tmp} file first, then moves it into place
+   * with ATOMIC_MOVE (falling back to a plain replace on filesystems that
+   * dont support atomic moves). this way a crash mid-write leaves the old
+   * file intact instead of truncating it to 0 bytes, which is what plain
+   * {@code new FileWriter(file)} would do.
+   *
+   * <p>charset is pinned to UTF-8 on both sides (save and load) so non-ascii
+   * owner names / addresses / toys survive round tripping across windows
+   * (cp1252 default) and linux (utf-8 default).
+   */
   public static void saveToFile(Object obj, File file) throws Exception {
     Object xstream = createXStream();
     Method toXML = xstream.getClass().getMethod("toXML", Object.class, Writer.class);
-    try (Writer writer = new FileWriter(file)) {
+    Path target = file.toPath();
+    Path tmp = target.resolveSibling(target.getFileName() + ".tmp");
+    try (Writer writer = Files.newBufferedWriter(tmp, StandardCharsets.UTF_8)) {
       toXML.invoke(xstream, obj, writer);
+    } catch (Exception e) {
+      // write failed mid-stream, clean up the partial tmp so it doesnt linger.
+      // note: on success we leave tmp alone until the move below consumes it.
+      try {
+        Files.deleteIfExists(tmp);
+      } catch (Exception ignored) {
+        // best effort, not worth masking the original failure
+      }
+      throw e;
+    }
+    // tmp file has the full new contents, swap it into place
+    try {
+      Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+    } catch (AtomicMoveNotSupportedException e) {
+      // some windows + network filesystems dont support atomic move, fall back
+      // to a non-atomic replace. still better than the old truncate then write.
+      Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
     }
   }
 
@@ -60,6 +94,10 @@ public final class XmlSerializer {
    * <p>{@code allowedTypes} is xstreams security allowlist (required since
    * 1.4.18). pass every concrete class that might appear in the saved object
    * graph plus the collection wrapper classes.
+   *
+   * <p>reader is pinned to UTF-8, matching what {@link #saveToFile(Object, File)}
+   * writes. the platform default charset (cp1252 on windows) would otherwise
+   * mangle any non ascii characters written on a utf-8 box.
    */
   public static Object loadFromFile(File file, Class<?>... allowedTypes) throws Exception {
     Object xstream = createXStream();
@@ -68,7 +106,7 @@ public final class XmlSerializer {
       allowTypes.invoke(xstream, (Object) allowedTypes);
     }
     Method fromXML = xstream.getClass().getMethod("fromXML", Reader.class);
-    try (Reader reader = new FileReader(file)) {
+    try (Reader reader = Files.newBufferedReader(file.toPath(), StandardCharsets.UTF_8)) {
       return fromXML.invoke(xstream, reader);
     }
   }

@@ -2,6 +2,7 @@ package daycare.controllers;
 
 import daycare.models.Owner;
 import daycare.utils.ISerializer;
+import daycare.utils.Utilities;
 import daycare.utils.XmlSerializer;
 import java.io.File;
 import java.util.ArrayList;
@@ -29,6 +30,15 @@ import java.util.ArrayList;
  * }</pre>
  */
 public class OwnerAPI implements ISerializer {
+
+  /**
+   * xstream security allowlist for {@link #load()}. Owner is the only domain
+   * type in the owners file, plus ArrayList for the wrapper. no java.lang
+   * gadget classes, ever, see PetsDayCareAPI.ALLOWED_TYPES for why.
+   */
+  private static final Class<?>[] ALLOWED_TYPES = {
+      Owner.class, ArrayList.class
+  };
 
   private String name;
   private File file;
@@ -103,21 +113,14 @@ public class OwnerAPI implements ISerializer {
   }
 
   public ArrayList<Owner> getOwners() {
-    return owners;
+    // defensive copy: returning the backing list would let callers add,
+    // remove, or reorder owners without going through addOwner/removeOwner.
+    // still an ArrayList so the UML signature holds.
+    return new ArrayList<>(owners);
   }
 
   public String listAllOwners() {
-    if (owners.isEmpty()) {
-      return "(no owners)";
-    }
-    String result = "";
-    for (int i = 0; i < owners.size(); i++) {
-      if (!result.isEmpty()) {
-        result += "\n";
-      }
-      result += i + ": " + owners.get(i);
-    }
-    return result;
+    return Utilities.joinIndexed(owners, o -> true, "(no owners)");
   }
 
   public String getName() {
@@ -139,16 +142,28 @@ public class OwnerAPI implements ISerializer {
   }
 
   @Override
-  @SuppressWarnings("unchecked")
   public void load() throws Exception {
     if (!file.exists()) {
       // first run, nothing to load. leave the empty list as is.
       return;
     }
-    Object loaded = XmlSerializer.loadFromFile(file, Owner.class, ArrayList.class);
-    if (loaded instanceof ArrayList<?> list) {
-      this.owners = (ArrayList<Owner>) list;
+    Object loaded = XmlSerializer.loadFromFile(file, ALLOWED_TYPES);
+    if (!(loaded instanceof ArrayList<?> rawList)) {
+      // fail loud on shape mismatch, same reasoning as PetsDayCareAPI.load.
+      throw new IllegalStateException(
+          "owners file root is not a List, got: "
+              + (loaded == null ? "null" : loaded.getClass().getName()));
     }
+    ArrayList<Owner> typed = new ArrayList<>(rawList.size());
+    for (Object item : rawList) {
+      if (!(item instanceof Owner owner)) {
+        throw new IllegalStateException(
+            "owners file contains a non-Owner entry: "
+                + (item == null ? "null" : item.getClass().getName()));
+      }
+      typed.add(owner);
+    }
+    this.owners = typed;
     recomputeNextOwnerId();
   }
 

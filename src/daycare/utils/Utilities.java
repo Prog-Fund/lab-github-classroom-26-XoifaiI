@@ -1,7 +1,12 @@
 package daycare.utils;
 
+import java.util.List;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+
 /**
- * Utilities: tiny formatting + range helpers used across the codebase.
+ * Utilities: tiny formatting, text, and range helpers used across the codebase.
  *
  * <p>this is the dumping ground for one liners that dont fit anywhere else.
  * if it grows past ~10 methods or starts having internal state, split it
@@ -15,6 +20,9 @@ package daycare.utils;
  * String day = Utilities.dayName(0);                    // "Mon"
  * String label = Utilities.pluralize(3, "dog", "dogs"); // "3 dogs"
  * boolean ok = Utilities.validRange(5, 0, 10);          // true
+ * String cut = Utilities.truncate("hello world", 5);   // "hello"
+ * String list = Utilities.joinIndexed(
+ *     items, x -> true, "(empty)");                    // "0: a\n1: b\n2: c"
  * }</pre>
  */
 public final class Utilities {
@@ -68,5 +76,54 @@ public final class Utilities {
   /** Returns true if {@code value} is in {@code [min, max]} inclusive. */
   public static boolean validRange(int value, int min, int max) {
     return value >= min && value <= max;
+  }
+
+  /**
+   * Chops {@code value} down to {@code max} chars, utf-16 surrogate safe.
+   *
+   * <p>null in, null out. if the boundary would land in the middle of a
+   * surrogate pair we back off one char so we never emit a lone high
+   * surrogate, which xml serialisation rejects and the windows console
+   * renders as '?'. used by Pet and PetsDayCareAPI for the spec-defined
+   * name length caps, factored out so theres one surrogate handling path.
+   */
+  public static String truncate(String value, int max) {
+    if (value == null) {
+      return null;
+    }
+    if (value.length() <= max) {
+      return value;
+    }
+    int end = max;
+    if (end > 0 && Character.isHighSurrogate(value.charAt(end - 1))) {
+      end--;
+    }
+    return value.substring(0, end);
+  }
+
+  /**
+   * Joins items in {@code list} that pass {@code filter}, formatted as
+   * {@code "index: item"}, newline delimited.
+   *
+   * <p>the index is the items position in the ORIGINAL list, not in the
+   * filtered subset, so values line up with what the user sees on screen
+   * and what {@code deletePetByIndex} etc. expect. empty result falls
+   * back to {@code emptyMsg} so list screens never show a dangling header
+   * with nothing under it.
+   *
+   * <p>time complexity is linear in list size, memory is linear in the
+   * total rendered length. Collectors.joining does the concatenation via
+   * StringJoiner internally, so the body of this method stays free of the
+   * O(n^2) {@code result += ...} anti pattern.
+   */
+  public static <T> String joinIndexed(
+      List<T> list,
+      Predicate<? super T> filter,
+      String emptyMsg) {
+    String result = IntStream.range(0, list.size())
+        .filter(i -> filter.test(list.get(i)))
+        .mapToObj(i -> i + ": " + list.get(i))
+        .collect(Collectors.joining("\n"));
+    return result.isEmpty() ? emptyMsg : result;
   }
 }

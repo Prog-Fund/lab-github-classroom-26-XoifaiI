@@ -9,11 +9,12 @@ import daycare.models.Parrot;
 import daycare.models.Pet;
 import daycare.utils.BirdUtility;
 import daycare.utils.ISerializer;
+import daycare.utils.Utilities;
 import daycare.utils.XmlSerializer;
 import java.io.File;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
-import java.util.Set;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 /**
  * PetsDayCareAPI: in memory CRUD + queries + reports for the daycares pet list.
@@ -55,13 +56,27 @@ public class PetsDayCareAPI implements ISerializer {
   /** name field is capped at 20 chars per spec, anything longer gets truncated. */
   public static final int MAX_NAME_LENGTH = 20;
 
+  /**
+   * xstream security allowlist for {@link #load()}. every concrete class that
+   * can appear in the saved pet graph (incl. the ArrayList wrapper and the
+   * primitive boolean[] used for Pet.daysAttending) has to be listed here or
+   * xstream will refuse to deserialise it. dont add anything risky (Runtime,
+   * ProcessBuilder, JdbcRowSetImpl, etc) to this list ever, thats exactly the
+   * gadget chain surface xstreams allowTypes is meant to block.
+   */
+  private static final Class<?>[] ALLOWED_TYPES = {
+      Pet.class, Mammal.class, Bird.class,
+      Dog.class, Cat.class, Parrot.class,
+      Owner.class, ArrayList.class, boolean[].class
+  };
+
   private String name;
   private int maxNumberOfPets;
   private File file;
   private ArrayList<Pet> pets;
 
   public PetsDayCareAPI(String name, int maxNumberOfPets, File file) {
-    this.name = truncate(name, MAX_NAME_LENGTH);
+    this.name = Utilities.truncate(name, MAX_NAME_LENGTH);
     this.maxNumberOfPets = maxNumberOfPets;
     this.file = file;
     this.pets = new ArrayList<>();
@@ -203,117 +218,58 @@ public class PetsDayCareAPI implements ISerializer {
   }
 
   public String listAllPets() {
-    if (pets.isEmpty()) {
-      return "No Pets";
-    }
-    String result = "";
-    for (int i = 0; i < pets.size(); i++) {
-      if (!result.isEmpty()) {
-        result += "\n";
-      }
-      result += i + ": " + pets.get(i);
-    }
-    return result;
+    return Utilities.joinIndexed(pets, p -> true, "No Pets");
   }
 
   public String listAllDogs() {
-    String result = "";
-    for (int i = 0; i < pets.size(); i++) {
-      if (pets.get(i) instanceof Dog) {
-        if (!result.isEmpty()) {
-          result += "\n";
-        }
-        result += i + ": " + pets.get(i);
-      }
-    }
-    return result.isEmpty() ? "No Dogs" : result;
+    return Utilities.joinIndexed(pets, p -> p instanceof Dog, "No Dogs");
   }
 
   public String listAllCats() {
-    String result = "";
-    for (int i = 0; i < pets.size(); i++) {
-      if (pets.get(i) instanceof Cat) {
-        if (!result.isEmpty()) {
-          result += "\n";
-        }
-        result += i + ": " + pets.get(i);
-      }
-    }
-
-    return result.isEmpty() ? "No cats" : result;
+    return Utilities.joinIndexed(pets, p -> p instanceof Cat, "No cats");
   }
 
   public String listAllParrots() {
-    String result = "";
-    for (int i = 0; i < pets.size(); i++) {
-      if (pets.get(i) instanceof Parrot) {
-        if (!result.isEmpty()) {
-          result += "\n";
-        }
-        result += i + ": " + pets.get(i);
-      }
-    }
-    return result.isEmpty() ? "No Parrots" : result;
+    return Utilities.joinIndexed(pets, p -> p instanceof Parrot, "No Parrots");
   }
 
   public String listAllDangerousDogs() {
-    String result = "";
-    for (int i = 0; i < pets.size(); i++) {
-      if (pets.get(i) instanceof Dog dog && dog.isDangerousBreed()) {
-        if (!result.isEmpty()) {
-          result += "\n";
-        }
-        result += i + ": " + dog;
-      }
-    }
-    return result.isEmpty() ? "No Dangerous Dogs in the Kennels" : result;
+    return Utilities.joinIndexed(
+        pets,
+        p -> p instanceof Dog dog && dog.isDangerousBreed(),
+        "No Dangerous Dogs in the Kennels");
   }
 
   public String listAllPetsByOwner(String ownerName) {
-    String result = "";
-    for (int i = 0; i < pets.size(); i++) {
-      Pet p = pets.get(i);
-      if (p.getOwner() != null && p.getOwner().getName().equalsIgnoreCase(ownerName)) {
-        if (!result.isEmpty()) {
-          result += "\n";
-        }
-        result += i + ": " + p;
-      }
-    }
-    return result.isEmpty() ? "No Pet with owner " + ownerName : result;
+    return Utilities.joinIndexed(
+        pets,
+        p -> p.getOwner() != null && p.getOwner().getName().equalsIgnoreCase(ownerName),
+        "No Pet with owner " + ownerName);
   }
 
+  /**
+   * Lists pets attending more than {@code days} days per week.
+   *
+   * <p>format is {@code "name (N days)"} per line, no leading index because the
+   * report screen doesnt need one. joinIndexed doesnt fit here (different
+   * shape), so we use an inline stream.
+   */
   public String listAllPetsThatStayMoreThanDays(int days) {
-    String result = "";
-    for (Pet p : pets) {
-      if (p.numOfDaysAttending() > days) {
-        if (!result.isEmpty()) {
-          result += "\n";
-        }
-        result += p.getName() + " (" + p.numOfDaysAttending() + " days)";
-      }
-    }
+    String result = pets.stream()
+        .filter(p -> p.numOfDaysAttending() > days)
+        .map(p -> p.getName() + " (" + p.numOfDaysAttending() + " days)")
+        .collect(Collectors.joining("\n"));
     return result.isEmpty() ? "No Pet stays longer than " + days : result;
   }
 
   public String listOwners() {
-    Set<String> seen = new LinkedHashSet<>();
-    for (Pet p : pets) {
-      if (p.getOwner() != null) {
-        seen.add(p.getOwner().getName());
-      }
-    }
-    if (seen.isEmpty()) {
-      return "(no owners)";
-    }
-    String result = "";
-    for (String n : seen) {
-      if (!result.isEmpty()) {
-        result += "\n";
-      }
-      result += n;
-    }
-    return result;
+    String result = pets.stream()
+        .map(Pet::getOwner)
+        .filter(Objects::nonNull)
+        .map(Owner::getName)
+        .distinct()
+        .collect(Collectors.joining("\n"));
+    return result.isEmpty() ? "(no owners)" : result;
   }
 
   public Pet findDogByOwnerAndBreedAndAge(String ownerName, String breed, int age) {
@@ -331,15 +287,11 @@ public class PetsDayCareAPI implements ISerializer {
   }
 
   public String getPetsByOwnersName(String ownerName) {
-    String result = "";
-    for (Pet p : pets) {
-      if (p.getOwner() != null && p.getOwner().getName().equalsIgnoreCase(ownerName)) {
-        if (!result.isEmpty()) {
-          result += ", ";
-        }
-        result += p.getName();
-      }
-    }
+    String result = pets.stream()
+        .filter(p -> p.getOwner() != null
+            && p.getOwner().getName().equalsIgnoreCase(ownerName))
+        .map(Pet::getName)
+        .collect(Collectors.joining(", "));
     return result.isEmpty() ? "No Pets for " + ownerName : result;
   }
 
@@ -378,14 +330,6 @@ public class PetsDayCareAPI implements ISerializer {
     pets.set(j, tmp);
   }
 
-  private void swapPets(Pet a, Pet b) {
-    int ai = pets.indexOf(a);
-    int bi = pets.indexOf(b);
-    if (ai >= 0 && bi >= 0) {
-      swapPets(ai, bi);
-    }
-  }
-
   public double getWeeklyIncome() {
     double total = 0;
     for (Pet p : pets) {
@@ -411,14 +355,14 @@ public class PetsDayCareAPI implements ISerializer {
 
   public void setName(String name) {
     if (name != null) {
-      this.name = truncate(name, MAX_NAME_LENGTH);
+      this.name = Utilities.truncate(name, MAX_NAME_LENGTH);
     }
   }
 
   /** Same as {@link #setName(String)}, kept around for parity with the UML. */
   public void initName(String name) {
     if (name != null) {
-      this.name = truncate(name, MAX_NAME_LENGTH);
+      this.name = Utilities.truncate(name, MAX_NAME_LENGTH);
     }
   }
 
@@ -427,15 +371,26 @@ public class PetsDayCareAPI implements ISerializer {
   }
 
   public void setMaxNumberOfPets(int maxNumberOfPets) {
-    this.maxNumberOfPets = maxNumberOfPets;
+    // negative cap would brick addPet silently since pets.size() >= -1 is
+    // always true, so reject it. zero is allowed, means "full house".
+    if (maxNumberOfPets >= 0) {
+      this.maxNumberOfPets = maxNumberOfPets;
+    }
   }
 
   public ArrayList<Pet> getPetsArray() {
-    return pets;
+    // defensive copy: returning the backing list would let callers add,
+    // remove, or reorder pets without going through the capacity/null checks
+    // in addPet(). still returns an ArrayList to match the UML signature.
+    return new ArrayList<>(pets);
   }
 
   public void setPetsArray(ArrayList<Pet> pets) {
-    this.pets = pets;
+    if (pets != null) {
+      // defensive copy in, same reasoning, and make sure we drop any incoming
+      // null entries so the rest of the class doesnt have to guard for them.
+      this.pets = new ArrayList<>(pets);
+    }
   }
 
   @Override
@@ -449,25 +404,36 @@ public class PetsDayCareAPI implements ISerializer {
   }
 
   @Override
-  @SuppressWarnings("unchecked")
   public void load() throws Exception {
     if (!file.exists()) {
       // first run, nothing to load. leave the empty list as is.
       return;
     }
-    Object loaded = XmlSerializer.loadFromFile(file,
-        Pet.class, Mammal.class, Bird.class,
-        Dog.class, Cat.class, Parrot.class,
-        Owner.class, ArrayList.class, boolean[].class);
-    if (loaded instanceof ArrayList<?> list) {
-      this.pets = (ArrayList<Pet>) list;
+    Object loaded = XmlSerializer.loadFromFile(file, ALLOWED_TYPES);
+    if (!(loaded instanceof ArrayList<?> rawList)) {
+      // fail loud on shape mismatch. silently keeping the empty list would let
+      // the next save overwrite real data on disk with nothing, which is the
+      // worst possible failure mode for a persistence layer.
+      throw new IllegalStateException(
+          "pets file root is not a List, got: "
+              + (loaded == null ? "null" : loaded.getClass().getName()));
     }
+    // walk the raw list so we can fail loud on mixed/wrong element types
+    // instead of hiding it behind a blanket unchecked cast.
+    ArrayList<Pet> typed = new ArrayList<>(rawList.size());
+    for (Object item : rawList) {
+      if (!(item instanceof Pet pet)) {
+        throw new IllegalStateException(
+            "pets file contains a non-Pet entry: "
+                + (item == null ? "null" : item.getClass().getName()));
+      }
+      typed.add(pet);
+    }
+    this.pets = typed;
+    // xstream bypasses the Pet ctor, so Pet.nextId didnt get bumped during
+    // deserialisation. catch up now or a freshly added pet will collide with
+    // a loaded one.
+    Pet.recomputeNextId(this.pets);
   }
 
-  private static String truncate(String value, int max) {
-    if (value == null) {
-      return null;
-    }
-    return value.length() <= max ? value : value.substring(0, max);
-  }
 }
