@@ -295,28 +295,52 @@ public class PetsDayCareAPI implements ISerializer {
     return result.isEmpty() ? "No Pets for " + ownerName : result;
   }
 
-  /** Sorts {@code pets} by id, descending. Bubble sort, walks {@link #swapPets(int, int)}. */
+  /** Sorts {@code pets} by id, descending. Binary insertion sort using {@link #swapPets(int, int)}. */
   public void sortPetsById() {
-    for (int pass = 0; pass < pets.size() - 1; pass++) {
-      for (int j = 0; j < pets.size() - 1 - pass; j++) {
-        if (pets.get(j).getId() < pets.get(j + 1).getId()) {
-          swapPets(j, j + 1);
-        }
+    for (int i = 1; i < pets.size(); i++) {
+      Pet current = pets.get(i);
+      int insertionIndex = binarySearchDescendingById(0, i - 1, current.getId());
+
+      for (int j = i; j > insertionIndex; j--) {
+        swapPets(j, j - 1);
       }
     }
   }
 
-  /** Sorts {@code pets} by name (case insensitive), ascending. */
-  public void sortPetsByName() {
-    for (int pass = 0; pass < pets.size() - 1; pass++) {
-      for (int j = 0; j < pets.size() - 1 - pass; j++) {
-        String a = pets.get(j).getName();
-        String b = pets.get(j + 1).getName();
-        if (a.compareToIgnoreCase(b) > 0) {
-          swapPets(j, j + 1);
-        }
+  private int binarySearchDescendingById(int low, int high, int targetId) {
+    while (low <= high) {
+      int mid = low + (high - low) / 2;
+      if (pets.get(mid).getId() < targetId) {
+        high = mid - 1;
+      } else {
+        low = mid + 1;
       }
     }
+    return low;
+  }
+
+  /** Sorts {@code pets} by name (case insensitive), ascending. Binary insertion sort. */
+  public void sortPetsByName() {
+    for (int i = 1; i < pets.size(); i++) {
+      String currentName = pets.get(i).getName();
+      int insertionIndex = binarySearchAscendingByName(0, i - 1, currentName);
+
+      for (int j = i; j > insertionIndex; j--) {
+        swapPets(j, j - 1);
+      }
+    }
+  }
+
+  private int binarySearchAscendingByName(int low, int high, String targetName) {
+    while (low <= high) {
+      int mid = low + (high - low) / 2;
+      if (pets.get(mid).getName().compareToIgnoreCase(targetName) > 0) {
+        high = mid - 1;
+      } else {
+        low = mid + 1;
+      }
+    }
+    return low;
   }
 
   // both swap helpers are private per spec, sort routines above are the only
