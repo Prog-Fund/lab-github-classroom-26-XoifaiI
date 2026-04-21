@@ -243,7 +243,7 @@ public class PetsDayCareAPI implements ISerializer {
     for (int i = 1; i < pets.size(); i++) {
       int insertionIndex = binarySearchAscendingByName(0, i - 1, pets.get(i).getName());
       for (int j = i; j > insertionIndex; j--) {
-        swapPets(j, j - 1);
+        swapPets(pets.get(j), pets.get(j - 1));
       }
     }
   }
@@ -270,8 +270,16 @@ public class PetsDayCareAPI implements ISerializer {
     pets.set(j, tmp);
   }
 
+  // reference equality, not indexOf, because Dog.equals matches on breed only
+  // and would collapse distinct-but-equal dogs to the first match.
   private void swapPets(Pet i, Pet j) {
-    swapPets(pets.indexOf(i), pets.indexOf(j));
+    int a = -1;
+    int b = -1;
+    for (int k = 0; k < pets.size(); k++) {
+      if (pets.get(k) == i) a = k;
+      if (pets.get(k) == j) b = k;
+    }
+    swapPets(a, b);
   }
 
   public double getWeeklyIncome() {
