@@ -6,47 +6,25 @@ import java.util.Arrays;
 /**
  * Pet: abstract base for any animal staying at the daycare.
  *
- * <p>holds the stuff every pet has regardless of species: id, name, age,
- * who owns it, and which days of the week its attending. subclasses
- * (Dog, Cat, Parrot via Mammal/Bird) add their own species fields and pin
- * down how the weekly fee actually gets computed.
+ * <p>holds id, name, age, owner, and which days of the week its attending.
+ * subclasses (Dog / Cat / Parrot via Mammal / Bird) add their own species
+ * fields and pin down the weekly fee.
  *
- * <p>id is auto assigned from a static {@link #nextId} counter that starts at
- * {@link #FIRST_ID} (1000), so every Pet ever constructed gets a unique id
- * the user never has to pick. callers can still pass an id explicitly, if
- * its >= {@link #FIRST_ID} we trust it and bump the counter past it; anything
- * smaller (incl. the usual 0 sentinel) means "give me a fresh one".
- *
- * <p>daysAttending is a 6 slot primitive boolean array (mon = 0, sat = 5).
- * urban tails is closed sundays so theres no slot for it. seeded to all
- * false in the ctor so {@link #numOfDaysAttending()} is always safe to call.
- *
- * <p>Returns: abstract class. instantiate one of the concrete subclasses
- * (Dog / Cat / Parrot) instead.
- *
- * <p>Example, once a concrete subclass exists:
- * <pre>{@code
- * Owner alice = new Owner(1, "Alice", "12 Main St", "555-0100", "a@x.com");
- * Pet rex = ...; // any Dog / Cat / Parrot
- * rex.setOwner(alice);
- * rex.checkIn(0);
- * rex.checkIn(1);
- * int days = rex.numOfDaysAttending();
- * double fee = rex.calculateWeeklyFee();
- * }</pre>
+ * <p>id is auto assigned from {@link #nextId} starting at {@link #FIRST_ID}.
+ * callers can still pass an id explicitly. if its >= {@link #FIRST_ID} we
+ * trust it and bump the counter past it, anything smaller means "give me a
+ * fresh one".
  */
 public abstract class Pet {
 
-  /** how many slots daysAttending holds. mon..sat, no sundays bc the daycare is closed. */
+  /** mon = 0, sat = 5. no sunday slot, the daycare is closed. */
   public static final int DAYS_PER_WEEK = 6;
 
-  /** first id ever handed out. spec says ids are >= 1000. */
+  /** spec says ids start at 1000. */
   public static final int FIRST_ID = 1000;
 
-  /** max length for the name field, anything longer gets truncated in the ctor/setter. */
   public static final int MAX_NAME_LENGTH = 30;
 
-  /** rolling id counter shared across every Pet instance. */
   private static int nextId = FIRST_ID;
 
   protected int id;
@@ -56,39 +34,31 @@ public abstract class Pet {
   protected boolean[] daysAttending;
 
   protected Pet(String name, int age, Owner owner, int id) {
-    // assign fields directly instead of going through the public setters,
-    // calling overridable methods from a ctor is the classic java footgun
-    // (subclass override runs before its own fields are initialized)
+    // assign fields directly instead of going through the public setters.
+    // calling overridable methods from a ctor runs the override before its
+    // own fields are initialized.
     this.name = Utilities.truncate(name, MAX_NAME_LENGTH);
     this.age = age;
-    // spec says owner "must be a valid owner", we treat null as invalid and
-    // leave the field null. callers can fix it later via setOwner.
     this.owner = owner;
     this.id = assignId(id);
     this.daysAttending = new boolean[DAYS_PER_WEEK];
-    // primitive booleans default to false, no need to fill explicitly, but
-    // doing it anyway keeps the intent obvious if anyone changes the type.
     Arrays.fill(this.daysAttending, false);
   }
 
-  /** Subclasses say how much they cost the owner per week. */
   public abstract double calculateWeeklyFee();
 
-  /** Marks this pet as attending on {@code day} (0 = mon, 5 = sat). */
   public void checkIn(int day) {
     if (Utilities.validRange(day, 0, DAYS_PER_WEEK - 1)) {
       daysAttending[day] = true;
     }
   }
 
-  /** Clears attendance for {@code day} (0 = mon, 5 = sat). */
   public void checkOut(int day) {
     if (Utilities.validRange(day, 0, DAYS_PER_WEEK - 1)) {
       daysAttending[day] = false;
     }
   }
 
-  /** Counts how many days this pet is actually showing up this week. */
   public int numOfDaysAttending() {
     int total = 0;
     for (boolean day : daysAttending) {
@@ -112,19 +82,12 @@ public abstract class Pet {
   }
 
   public void setName(String name) {
-    // setters dont apply defaults, they only update if the value passed in is
-    // valid. for name "valid" means non-null, and we still truncate.
     if (name != null) {
       this.name = Utilities.truncate(name, MAX_NAME_LENGTH);
     }
   }
 
-  /**
-   * Same effect as {@link #setName(String)}, kept around bc the UML lists both.
-   *
-   * <p>convention in this codebase: use initName from constructors / first-time
-   * setup, setName for later mutations. functionally identical right now.
-   */
+  /** same effect as {@link #setName(String)}, kept around bc the UML lists both. */
   public void initName(String name) {
     if (name != null) {
       this.name = Utilities.truncate(name, MAX_NAME_LENGTH);
@@ -150,15 +113,13 @@ public abstract class Pet {
   }
 
   public boolean[] getDaysAttending() {
-    // defensive copy on the way out: otherwise a caller could flip days past
-    // our checkIn/checkOut guard and skip the validRange check entirely.
+    // defensive copy: a caller could otherwise flip days past the checkIn /
+    // checkOut guard and skip the validRange check.
     return Arrays.copyOf(daysAttending, daysAttending.length);
   }
 
   public void setDaysAttending(boolean[] daysAttending) {
     if (daysAttending != null && daysAttending.length == DAYS_PER_WEEK) {
-      // defensive copy on the way in, same reasoning: stop the caller from
-      // keeping a live handle to our internal array after the set.
       this.daysAttending = Arrays.copyOf(daysAttending, DAYS_PER_WEEK);
     }
   }
@@ -171,14 +132,6 @@ public abstract class Pet {
         numOfDaysAttending(), DAYS_PER_WEEK);
   }
 
-  /**
-   * Picks an id for a new Pet.
-   *
-   * <p>if the caller passed an id >= {@link #FIRST_ID} we keep it and bump
-   * {@link #nextId} past it (so loaded pets dont collide with new ones). if
-   * they passed anything smaller, incl the 0 sentinel the menu uses, we hand
-   * out the next id from the counter.
-   */
   private static int assignId(int requested) {
     if (requested >= FIRST_ID) {
       if (requested >= nextId) {
@@ -190,16 +143,10 @@ public abstract class Pet {
   }
 
   /**
-   * Advances {@link #nextId} past every id in {@code loaded}.
-   *
-   * <p>xstream builds pets via reflection, bypassing the ctor, so {@link #assignId}
-   * never runs for loaded pets and the static counter would otherwise stay at
-   * whatever it was before the load. call this after deserialising a list of
-   * pets to keep ids monotonic across a save/load cycle. mirrors what
-   * {@code OwnerAPI.recomputeNextOwnerId()} already does for owners.
-   *
-   * <p>only moves the counter forward, never backward, so its safe to call
-   * repeatedly and safe when {@code loaded} is empty.
+   * advances {@link #nextId} past every id in {@code loaded}. xstream builds
+   * pets via reflection and skips the ctor, so the static counter stays at
+   * whatever it was before the load. callers should run this after
+   * deserialising so fresh pets dont collide with restored ones.
    */
   public static void recomputeNextId(Iterable<? extends Pet> loaded) {
     if (loaded == null) {
@@ -211,5 +158,4 @@ public abstract class Pet {
       }
     }
   }
-
 }

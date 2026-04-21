@@ -3,36 +3,15 @@ package daycare.models;
 import java.util.Objects;
 
 /**
- * Bird: abstract Pet with feathers, a wingspan, and a "can it actually fly" flag.
+ * Bird: abstract Pet with feathers, a wingspan, and a can fly flag.
  *
- * <p>middle layer between Pet and the concrete Parrot class. matches the UML
- * which puts equals/hashCode on Bird specifically (Mammal doesnt have them),
- * so two birds count as equal when their wingSpan and canFly match.
- *
- * <p>validation rules per spec: wingspan must be between {@link #MIN_WINGSPAN}
- * and {@link #MAX_WINGSPAN} cm, otherwise the default ({@link #DEFAULT_WINGSPAN})
- * sticks. canFly defaults to false.
- *
- * <p>Returns: abstract class. instantiate Parrot instead.
- *
- * <p>Example, once a concrete subclass exists:
- * <pre>{@code
- * Owner bob = new Owner(2, "Bob", "1 Oak Rd", "555-0200", "b@x.com");
- * Bird bird = ...; // any Parrot
- * bird.setWingSpan(40);
- * bird.setCanFly(true);
- * boolean flier = bird.isCanFly();
- * }</pre>
+ * <p>UML puts equals / hashCode on Bird specifically (Mammal doesnt have
+ * them), so two birds count as equal when their wingSpan and canFly match.
  */
 public abstract class Bird extends Pet {
 
-  /** smallest acceptable wingspan in cm. tinier than this and its a bug. */
   public static final double MIN_WINGSPAN = 3;
-
-  /** largest acceptable wingspan in cm. anything bigger isnt fitting in the daycare. */
   public static final double MAX_WINGSPAN = 400;
-
-  /** wingspan used when the ctor was handed something out of range. */
   public static final double DEFAULT_WINGSPAN = 3;
 
   protected double wingSpan = DEFAULT_WINGSPAN;

@@ -12,32 +12,12 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 
 /**
- * XmlSerializer: reflection based wrapper around XStream for save/load.
+ * XmlSerializer: reflection based wrapper around XStream for save and load.
  *
- * <p>uses reflection to call into XStream so this file (and the rest of the
- * project) compiles cleanly even when the xstream jar isnt on the classpath.
- * xstream is only needed at RUNTIME, drop xstream-1.4.21.jar in lib/ and
- * run with {@code -cp "out;lib/*"} (windows) / {@code "out:lib/*"} (unix)
- * and save/load just works. if the jar is missing youll get a clear error.
- *
- * <p>why reflection: lets the project compile without dragging in a
- * third-party dep at compile time. the cost is some ugly Method.invoke calls
- * in {@link #saveToFile(Object, File)} / {@link #loadFromFile(File, Class[])},
- * which is contained to this one file.
- *
- * <p>Returns: static helpers only, dont instantiate.
- *
- * <p>Example:
- * <pre>{@code
- * File file = new File("pets.xml");
- * ArrayList<Pet> pets = ...;
- * XmlSerializer.saveToFile(pets, file);
- *
- * Object loaded = XmlSerializer.loadFromFile(
- *     file, Pet.class, Dog.class, Cat.class, Parrot.class, ArrayList.class);
- * @SuppressWarnings("unchecked")
- * ArrayList<Pet> back = (ArrayList<Pet>) loaded;
- * }</pre>
+ * <p>reflection lets the project compile without xstream on the compile time
+ * classpath. xstream is only needed at runtime, drop xstream-1.4.21.jar in
+ * lib/ and run with {@code -cp "out;lib/*"} (windows) / {@code "out:lib/*"}
+ * (unix).
  */
 public final class XmlSerializer {
 
@@ -49,17 +29,12 @@ public final class XmlSerializer {
   private XmlSerializer() {}
 
   /**
-   * Writes {@code obj} to {@code file} as UTF-8 XML, atomically.
+   * writes {@code obj} to {@code file} as UTF-8 XML, atomically.
    *
-   * <p>writes to a sibling {@code .tmp} file first, then moves it into place
-   * with ATOMIC_MOVE (falling back to a plain replace on filesystems that
-   * dont support atomic moves). this way a crash mid-write leaves the old
-   * file intact instead of truncating it to 0 bytes, which is what plain
-   * {@code new FileWriter(file)} would do.
-   *
-   * <p>charset is pinned to UTF-8 on both sides (save and load) so non-ascii
-   * owner names / addresses / toys survive round tripping across windows
-   * (cp1252 default) and linux (utf-8 default).
+   * <p>writes to a sibling {@code .tmp} first then moves it into place, so a
+   * crash mid write leaves the old file intact instead of truncating it.
+   * charset is pinned to UTF-8 on both sides so non ascii owner names survive
+   * round tripping across windows and linux defaults.
    */
   public static void saveToFile(Object obj, File file) throws Exception {
     Object xstream = createXStream();
@@ -69,35 +44,27 @@ public final class XmlSerializer {
     try (Writer writer = Files.newBufferedWriter(tmp, StandardCharsets.UTF_8)) {
       toXML.invoke(xstream, obj, writer);
     } catch (Exception e) {
-      // write failed mid-stream, clean up the partial tmp so it doesnt linger.
-      // note: on success we leave tmp alone until the move below consumes it.
       try {
         Files.deleteIfExists(tmp);
       } catch (Exception ignored) {
-        // best effort, not worth masking the original failure
+        // best effort, dont mask the original failure
       }
       throw e;
     }
-    // tmp file has the full new contents, swap it into place
     try {
       Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
     } catch (AtomicMoveNotSupportedException e) {
-      // some windows + network filesystems dont support atomic move, fall back
-      // to a non-atomic replace. still better than the old truncate then write.
+      // some windows + network filesystems dont support atomic move
       Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
     }
   }
 
   /**
-   * Reads an XML file written by {@link #saveToFile(Object, File)} and returns the object.
+   * reads an XML file written by {@link #saveToFile(Object, File)}.
    *
    * <p>{@code allowedTypes} is xstreams security allowlist (required since
-   * 1.4.18). pass every concrete class that might appear in the saved object
-   * graph plus the collection wrapper classes.
-   *
-   * <p>reader is pinned to UTF-8, matching what {@link #saveToFile(Object, File)}
-   * writes. the platform default charset (cp1252 on windows) would otherwise
-   * mangle any non ascii characters written on a utf-8 box.
+   * 1.4.18). callers should pass every concrete class that might appear in
+   * the saved object graph plus the collection wrapper classes.
    */
   public static Object loadFromFile(File file, Class<?>... allowedTypes) throws Exception {
     Object xstream = createXStream();

@@ -1,22 +1,6 @@
 package daycare.models;
 
-/**
- * Owner: a person who owns one or more pets at the daycare.
- *
- * <p>plain data class. id is assigned by OwnerAPI when the owner gets added,
- * not picked by the user. everything else is the contact info we need to
- * actually reach them when their dog eats the curtains.
- *
- * <p>Returns: instance of Owner with id + name + address + phone + email.
- *
- * <p>Example:
- * <pre>{@code
- * Owner alice = new Owner(1, "Alice Smith", "12 Main St",
- *     "555-0100", "alice@example.com");
- * String who = alice.getName();
- * alice.setPhone("555-0199");
- * }</pre>
- */
+/** plain data class for a pet owner. id gets assigned by OwnerAPI, not picked by the user. */
 public class Owner {
 
   private int id;

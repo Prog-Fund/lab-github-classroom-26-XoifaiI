@@ -4,23 +4,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Table: Renders a table with auto sized columns and a bordered header row.
+ * Table: auto sized columns with a bordered header. never prints.
  *
  * <p>each column grows to fit its widest cell, capped by
- * {@link #maxColumnWidth(int)}, anything longer gets the "..." treatment.
- * doesnt know what the cells mean.
- *
- * <p>Returns: builder, chain {@code addRow} / {@code maxColumnWidth} then call
- * {@link #print()} to dump it to stdout.
- *
- * <p>Example:
- * <pre>{@code
- * new Table(List.of("Id", "Name", "Breed"))
- *     .addRow(List.of("1", "Rex", "Labrador"))
- *     .addRow(List.of("2", "Biscuit", "Corgi"))
- *     .maxColumnWidth(20)
- *     .print();
- * }</pre>
+ * {@link #maxColumnWidth(int)}. doesnt know what the cells mean.
  */
 public final class Table {
 
@@ -42,47 +29,47 @@ public final class Table {
     return this;
   }
 
-  /** Dumps the table to stdout. */
-  public void print() {
+  /** rendered lines ready for the caller to print. */
+  public List<String> lines() {
     int cols = headers.size();
     int[] widths = new int[cols];
-    // start each column wide enough for its header...
     for (int i = 0; i < cols; i++) {
       widths[i] = Math.min(maxColumnWidth, Tui.visibleLength(headers.get(i)));
     }
-    // ...then grow to fit any wider cell, but never past the cap
     for (List<String> row : rows) {
       for (int i = 0; i < cols && i < row.size(); i++) {
         widths[i] = Math.min(maxColumnWidth, Math.max(widths[i], Tui.visibleLength(row.get(i))));
       }
     }
-    System.out.println(border(widths, '\u250c', '\u252c', '\u2510'));
-    System.out.println(rowLine(headers, widths, true));
-    System.out.println(border(widths, '\u251c', '\u253c', '\u2524'));
+
+    List<String> out = new ArrayList<>(rows.size() + 4);
+    out.add(border(widths, '┌', '┬', '┐'));
+    out.add(rowLine(headers, widths, true));
+    out.add(border(widths, '├', '┼', '┤'));
     for (List<String> row : rows) {
-      System.out.println(rowLine(row, widths, false));
+      out.add(rowLine(row, widths, false));
     }
-    System.out.println(border(widths, '\u2514', '\u2534', '\u2518'));
+    out.add(border(widths, '└', '┴', '┘'));
+    return out;
   }
 
   private static String border(int[] widths, char left, char mid, char right) {
     String line = Tui.muted(String.valueOf(left));
     for (int i = 0; i < widths.length; i++) {
-      line += Tui.muted(repeat('\u2500', widths[i] + 2));
+      line += Tui.muted(repeat('─', widths[i] + 2));
       line += Tui.muted(String.valueOf(i == widths.length - 1 ? right : mid));
     }
     return line;
   }
 
   private static String rowLine(List<String> cells, int[] widths, boolean header) {
-    String line = Tui.muted("\u2502");
+    String line = Tui.muted("│");
     for (int i = 0; i < widths.length; i++) {
-      String cell = i < cells.size() ? cells.get(i) : "";
-      cell = fit(cell, widths[i]);
+      String cell = fit(i < cells.size() ? cells.get(i) : "", widths[i]);
       if (header) {
         cell = Tui.bold(cell);
       }
-      line += " " + cell + " " + Tui.muted("\u2502");
+      line += " " + cell + " " + Tui.muted("│");
     }
     return line;
   }

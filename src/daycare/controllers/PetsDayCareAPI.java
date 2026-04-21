@@ -19,50 +19,20 @@ import java.util.stream.Collectors;
 /**
  * PetsDayCareAPI: in memory CRUD + queries + reports for the daycares pet list.
  *
- * <p>this is the workhorse controller. it owns an {@code ArrayList<Pet>},
- * exposes count/list/sort/search helpers used by the menu and reports
- * screens, and persists the whole list to XML via {@link XmlSerializer}.
- *
- * <p>id assignment lives on {@link Pet} (static counter starting at 1000), not
- * here. callers can pass id = 0 to a Pet ctor and it will hand out a fresh
- * one. this class never touches ids.
- *
- * <p>note: most listing methods return a single newline delimited String so
- * the Driver can pipe them straight to {@code System.out.println}. zero
- * formatting smarts in here, the menu/Tui layer is in charge of styling.
- *
- * <p>sorting: hand rolled bubble sort that calls {@link #swapPets(int, int)}
- * (private). spec is explicit about not using library sort. sortPetsById is
- * descending, sortPetsByName is ascending.
- *
- * <p>Returns: instance, construct with name + max capacity + target file.
- *
- * <p>Example:
- * <pre>{@code
- * PetsDayCareAPI api = new PetsDayCareAPI("daycare", 100, new File("data/pets.xml"));
- * api.load();
- * Owner alice = ...;
- * Dog rex = new Dog("Rex", 3, alice, 0,
- *     'M', true, 25.5, true, "Labrador Retriever", false);
- * api.addPet(rex);
- * rex.checkIn(0);
- * rex.checkIn(1);
- * double income = api.getWeeklyIncome();
- * api.save();
- * }</pre>
+ * <p>sorting should not use library sort (spec rule). hand rolled binary
+ * insertion sort calls the private {@link #swapPets(int, int)}. sortPetsById
+ * is descending, sortPetsByName is ascending.
  */
 public class PetsDayCareAPI implements ISerializer {
 
-  /** name field is capped at 20 chars per spec, anything longer gets truncated. */
   public static final int MAX_NAME_LENGTH = 20;
 
   /**
-   * xstream security allowlist for {@link #load()}. every concrete class that
-   * can appear in the saved pet graph (incl. the ArrayList wrapper and the
-   * primitive boolean[] used for Pet.daysAttending) has to be listed here or
-   * xstream will refuse to deserialise it. dont add anything risky (Runtime,
-   * ProcessBuilder, JdbcRowSetImpl, etc) to this list ever, thats exactly the
-   * gadget chain surface xstreams allowTypes is meant to block.
+   * xstream allowlist for {@link #load()}. should include every concrete
+   * class that can appear in the saved pet graph including the ArrayList
+   * wrapper and the primitive boolean[] used for Pet.daysAttending. nothing
+   * risky (Runtime, ProcessBuilder, JdbcRowSetImpl) should ever go here,
+   * thats exactly the gadget chain surface allowTypes is meant to block.
    */
   private static final Class<?>[] ALLOWED_TYPES = {
       Pet.class, Mammal.class, Bird.class,
@@ -83,10 +53,7 @@ public class PetsDayCareAPI implements ISerializer {
   }
 
   public boolean addPet(Pet pet) {
-    if (pet == null) {
-      return false;
-    }
-    if (pets.size() >= maxNumberOfPets) {
+    if (pet == null || pets.size() >= maxNumberOfPets) {
       return false;
     }
     return pets.add(pet);
@@ -150,71 +117,31 @@ public class PetsDayCareAPI implements ISerializer {
   }
 
   public int numberOfDogs() {
-    int count = 0;
-    for (Pet p : pets) {
-      if (p instanceof Dog) {
-        count++;
-      }
-    }
-    return count;
+    return Utilities.countWhere(pets, p -> p instanceof Dog);
   }
 
   public int numberOfCats() {
-    int count = 0;
-    for (Pet p : pets) {
-      if (p instanceof Cat) {
-        count++;
-      }
-    }
-    return count;
+    return Utilities.countWhere(pets, p -> p instanceof Cat);
   }
 
   public int numberOfParrots() {
-    int count = 0;
-    for (Pet p : pets) {
-      if (p instanceof Parrot) {
-        count++;
-      }
-    }
-    return count;
+    return Utilities.countWhere(pets, p -> p instanceof Parrot);
   }
 
   public int numberOfDangerousDogs() {
-    int count = 0;
-    for (Pet p : pets) {
-      if (p instanceof Dog dog && dog.isDangerousBreed()) {
-        count++;
-      }
-    }
-    return count;
+    return Utilities.countWhere(pets, p -> p instanceof Dog dog && dog.isDangerousBreed());
   }
 
   public int numberOfIndoorCats() {
-    int count = 0;
-    for (Pet p : pets) {
-      if (p instanceof Cat cat && cat.isIndoorCat()) {
-        count++;
-      }
-    }
-    return count;
+    return Utilities.countWhere(pets, p -> p instanceof Cat cat && cat.isIndoorCat());
   }
 
-  /**
-   * Counts parrots whose vocab tier matches the tier {@code wordCount} maps to.
-   *
-   * <p>per spec, vocab is stored as a category String not a raw int, so we run
-   * the input through {@link BirdUtility#vocabularyCategory(int)} first and
-   * compare against each parrots stored tier.
-   */
+  /** counts parrots whose vocab tier matches the tier {@code wordCount} maps to. */
   public int numberOfParrotsByVocabularySize(int wordCount) {
     String target = BirdUtility.vocabularyCategory(wordCount);
-    int count = 0;
-    for (Pet p : pets) {
-      if (p instanceof Parrot par && target.equalsIgnoreCase(par.getVocabularySize())) {
-        count++;
-      }
-    }
-    return count;
+    return Utilities.countWhere(
+        pets,
+        p -> p instanceof Parrot par && target.equalsIgnoreCase(par.getVocabularySize()));
   }
 
   public String listAllPets() {
@@ -247,13 +174,7 @@ public class PetsDayCareAPI implements ISerializer {
         "No Pet with owner " + ownerName);
   }
 
-  /**
-   * Lists pets attending more than {@code days} days per week.
-   *
-   * <p>format is {@code "name (N days)"} per line, no leading index because the
-   * report screen doesnt need one. joinIndexed doesnt fit here (different
-   * shape), so we use an inline stream.
-   */
+  /** format is {@code "name (N days)"} per line, no leading index. */
   public String listAllPetsThatStayMoreThanDays(int days) {
     String result = pets.stream()
         .filter(p -> p.numOfDaysAttending() > days)
@@ -295,12 +216,10 @@ public class PetsDayCareAPI implements ISerializer {
     return result.isEmpty() ? "No Pets for " + ownerName : result;
   }
 
-  /** Sorts {@code pets} by id, descending. Binary insertion sort using {@link #swapPets(int, int)}. */
+  /** binary insertion sort by id, descending. */
   public void sortPetsById() {
     for (int i = 1; i < pets.size(); i++) {
-      Pet current = pets.get(i);
-      int insertionIndex = binarySearchDescendingById(0, i - 1, current.getId());
-
+      int insertionIndex = binarySearchDescendingById(0, i - 1, pets.get(i).getId());
       for (int j = i; j > insertionIndex; j--) {
         swapPets(j, j - 1);
       }
@@ -319,12 +238,10 @@ public class PetsDayCareAPI implements ISerializer {
     return low;
   }
 
-  /** Sorts {@code pets} by name (case insensitive), ascending. Binary insertion sort. */
+  /** binary insertion sort by name (case insensitive), ascending. */
   public void sortPetsByName() {
     for (int i = 1; i < pets.size(); i++) {
-      String currentName = pets.get(i).getName();
-      int insertionIndex = binarySearchAscendingByName(0, i - 1, currentName);
-
+      int insertionIndex = binarySearchAscendingByName(0, i - 1, pets.get(i).getName());
       for (int j = i; j > insertionIndex; j--) {
         swapPets(j, j - 1);
       }
@@ -343,8 +260,7 @@ public class PetsDayCareAPI implements ISerializer {
     return low;
   }
 
-  // both swap helpers are private per spec, sort routines above are the only
-  // legitimate callers.
+  // private per spec, sort routines above should be the only callers.
   private void swapPets(int i, int j) {
     if (!isValidPetIndex(i) || !isValidPetIndex(j)) {
       return;
@@ -352,6 +268,10 @@ public class PetsDayCareAPI implements ISerializer {
     Pet tmp = pets.get(i);
     pets.set(i, pets.get(j));
     pets.set(j, tmp);
+  }
+
+  private void swapPets(Pet i, Pet j) {
+    swapPets(pets.indexOf(i), pets.indexOf(j));
   }
 
   public double getWeeklyIncome() {
@@ -383,7 +303,7 @@ public class PetsDayCareAPI implements ISerializer {
     }
   }
 
-  /** Same as {@link #setName(String)}, kept around for parity with the UML. */
+  /** same as {@link #setName(String)}, kept around for parity with the UML. */
   public void initName(String name) {
     if (name != null) {
       this.name = Utilities.truncate(name, MAX_NAME_LENGTH);
@@ -396,23 +316,20 @@ public class PetsDayCareAPI implements ISerializer {
 
   public void setMaxNumberOfPets(int maxNumberOfPets) {
     // negative cap would brick addPet silently since pets.size() >= -1 is
-    // always true, so reject it. zero is allowed, means "full house".
+    // always true. zero is allowed, means full house.
     if (maxNumberOfPets >= 0) {
       this.maxNumberOfPets = maxNumberOfPets;
     }
   }
 
   public ArrayList<Pet> getPetsArray() {
-    // defensive copy: returning the backing list would let callers add,
-    // remove, or reorder pets without going through the capacity/null checks
-    // in addPet(). still returns an ArrayList to match the UML signature.
+    // defensive copy, returning the backing list would let callers reorder
+    // pets without going through addPet.
     return new ArrayList<>(pets);
   }
 
   public void setPetsArray(ArrayList<Pet> pets) {
     if (pets != null) {
-      // defensive copy in, same reasoning, and make sure we drop any incoming
-      // null entries so the rest of the class doesnt have to guard for them.
       this.pets = new ArrayList<>(pets);
     }
   }
@@ -430,20 +347,16 @@ public class PetsDayCareAPI implements ISerializer {
   @Override
   public void load() throws Exception {
     if (!file.exists()) {
-      // first run, nothing to load. leave the empty list as is.
       return;
     }
     Object loaded = XmlSerializer.loadFromFile(file, ALLOWED_TYPES);
     if (!(loaded instanceof ArrayList<?> rawList)) {
-      // fail loud on shape mismatch. silently keeping the empty list would let
-      // the next save overwrite real data on disk with nothing, which is the
-      // worst possible failure mode for a persistence layer.
+      // fail loud on shape mismatch, the next save would otherwise overwrite
+      // real data on disk with an empty list.
       throw new IllegalStateException(
           "pets file root is not a List, got: "
               + (loaded == null ? "null" : loaded.getClass().getName()));
     }
-    // walk the raw list so we can fail loud on mixed/wrong element types
-    // instead of hiding it behind a blanket unchecked cast.
     ArrayList<Pet> typed = new ArrayList<>(rawList.size());
     for (Object item : rawList) {
       if (!(item instanceof Pet pet)) {
@@ -454,10 +367,6 @@ public class PetsDayCareAPI implements ISerializer {
       typed.add(pet);
     }
     this.pets = typed;
-    // xstream bypasses the Pet ctor, so Pet.nextId didnt get bumped during
-    // deserialisation. catch up now or a freshly added pet will collide with
-    // a loaded one.
     Pet.recomputeNextId(this.pets);
   }
-
 }
