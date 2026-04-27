@@ -103,7 +103,7 @@ Testing wise, the chaos_ tests caught a few issues: NaN weight, infinity wingspa
 checkIn idempotency, the empty list sort being a no op. Several of those were
 bugs the first time i ran them.
 
-##References
+## References
 - Escape Codes: https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
 - JUnit Examples: https://github.com/junit-team/junit-examples
 - Some test ideas came from: https://github.com/CodeIntelligenceTesting/jazzer/
